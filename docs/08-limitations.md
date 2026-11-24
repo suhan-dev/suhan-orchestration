@@ -62,12 +62,21 @@ Python 3.9와 3.14에서 실행했고, 3.8은 문법 검사만 했습니다.
 (이름이 `spawn_agent`로 끝나는 도구를 모두 하청 생성으로 봄, matcher `^(apply_patch|.*spawn_agent|Agent)$`).
 `--ephemeral`로는 하청 생성 자체가 실패해(`no rollout found for thread id`) 이 옵션 없이 시험했습니다.
 
-### 실제 세션 시험 (Claude Code 2.1.321, `claude -p`) — 막힘
+### 실제 세션 시험 (Claude Code 2.1.321, 데스크톱 앱의 대화형 세션)
 
-`--setting-sources project --settings <임시 훅> --agents <임시 정의>`로 옛 설정을 빼고 넣으려 했으나, 모델 호출 전에
-`Failed to authenticate: OAuth session expired and could not be refreshed`로 끝났습니다(깨끗한 환경 변수로 다시 해도 같음).
-CLI 로그인이 만료된 상태라 더 진행하지 않았습니다. 그래서 Claude Code 쪽의 실제 훅 입력(`tool_name` `Agent`, `tool_input.subagent_type`·
-`model`·`effort`, `prompt_id`, 하청 안의 `agent_id`·`agent_type`)은 공식 hooks 문서와 자동 시험으로만 확인했고, 실제 세션에서는 확인하지 못했습니다.
+실제 컴퓨터에 `install --only claude --migrate-legacy`로 설치한 뒤(자가 시험 30개 통과), 열려 있던 세션에서 메인이 직접 호출해 확인했습니다.
+
+- 설정과 다른 강도로 하청 호출(`executor`, `effort: medium`) → 차단. 모델에게 전달된 메시지:
+  `[oche 게이트] 하청 effort 지정 'medium'은(는) 역할 executor의 설정과 다릅니다. …`
+- 지정 없이 `executor` 호출 → 통과. 하청이 답한 자기 모델 ID는 `claude-opus-5-5`였습니다(정의 파일의 별칭 `opus`가 최신으로 해석됨).
+- `general-purpose` 하청 → 차단(`하청 타입 'general-purpose'은(는) 부모 세션의 모델을 물려받으므로 금지입니다`).
+- 메인이 코드 파일 3개를 직접 만들기 → 3개째 차단(`이번 턴에 메인이 직접 수정한 코드 파일이 이미 2개입니다`).
+
+이것으로 실제 훅 입력의 `tool_name`(`Agent`·`Write`), `tool_input.subagent_type`·`effort`·`file_path`, 턴 id가 가정과 맞는 것을 확인했습니다.
+게이트 훅은 설치 직후 이미 열려 있던 세션에도 적용되는 것을 관찰했습니다. 규칙 문서는 새 세션부터 읽힙니다.
+
+실제 세션에서 확인하지 못한 것은 Workflow 차단, 하청 안의 재하청 차단, 호출 때 `model` 지정 차단, 옛 도구 이름 `Task`입니다. 이것들은 자동 시험으로만 확인했습니다.
+비대화형 `claude -p` 시험은 CLI 로그인이 만료된 상태라 하지 못했습니다(`Failed to authenticate: OAuth session expired …`).
 
 ### 시험하지 않은 것
 
