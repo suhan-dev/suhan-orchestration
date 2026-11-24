@@ -6,7 +6,7 @@
 > whose model and reasoning effort *you* choose from the terminal (`oche`, with a keyboard TUI). A PreToolUse hook blocks
 > other sub-agent types, call-time model/effort overrides, nested spawning and multi-agent fan-out, so a session cannot
 > quietly burn your top-tier model quota. Sub-agent models follow new releases automatically without spending LLM tokens.
-> Python 3.8+ standard library only; macOS and Linux tested, Windows emulated in tests. Documentation is in Korean.
+> Python 3.8+ standard library only; tested on macOS only; Linux uses the same POSIX paths but is untested, and Windows is only emulated in tests. Documentation is in Korean.
 
 메인 세션은 생각하고, 정해진 일은 하청 세 역할이 합니다. 하청의 모델·강도는 사람이 터미널에서 정하고,
 훅이 그 약속을 강제합니다. Claude Code와 Codex(CLI·ChatGPT 앱) 둘 다, 또는 한쪽에만 설치할 수 있습니다.

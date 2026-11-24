@@ -80,6 +80,7 @@ Python 3.9와 3.14에서 실행했고, 3.8은 문법 검사만 했습니다.
 
 ### 시험하지 않은 것
 
+- Linux(경로 규칙은 macOS와 같지만 실제 기기에서 돌려 보지 않았습니다)
 - ChatGPT 앱에서의 훅 신뢰·실행, Codex CLI의 대화형 `/hooks` 신뢰 흐름
 - 실제 Windows(`.cmd`/`.ps1`, `commandWindows`, 콘솔 키 입력, 앱 엔진 감지)
 - 다리 하청의 실제 실행, IDE 확장, 다중 에이전트 V2, Python 3.8 실행
