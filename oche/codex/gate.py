@@ -39,7 +39,6 @@ CODE_EXTS = {
     "zsh", "sql", "lua", "dart", "scala", "ex", "exs", "zig", "ipynb", "ps1",
 }
 PATCH_PATH = re.compile(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$")
-TOGGLE = "oche"
 
 
 def allow():
@@ -74,30 +73,24 @@ def patch_paths(patch):
     return out
 
 
-def check_spawn(tool_input):
-    global TOGGLE
-    models = read_json(MODELS_FILE)
-    TOGGLE = str(models.get("command_name") or TOGGLE)
-    roles = models.get("roles") or {}
-    stype = str(tool_input.get("agent_type") or "")
-    model = str(tool_input.get("model") or "").strip()
-    effort = str(tool_input.get("reasoning_effort") or "").strip().lower()
+def check_spawn(cfg, ti):
+    toggle = str(cfg.get("command_name") or "oche")
+    roles = cfg.get("roles") or {}
+    stype = str(ti.get("agent_type") or "")
+    model = str(ti.get("model") or "").strip()
+    effort = str(ti.get("reasoning_effort") or "").strip().lower()
     if stype not in ROLE_OF_TYPE:
         deny("하청 타입 '%s'은(는) 금지입니다. agent_type을 비우거나 내장 하청(default·worker·explorer)을 고르면 "
              "부모 모델을 물려받습니다. agent_type에 executor·deep_reasoner·runner 중 하나를 넣으세요." % (stype or "(없음)"))
     role = roles.get(ROLE_OF_TYPE[stype]) or {}
-    if model:
-        ok = {str(role.get(k) or "") for k in ("configured", "model")} - {""}
-        if model not in ok:
-            deny("하청 model 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 모델은 사용자가 터미널에서 `%s %s`로만 바꿉니다. "
-                 "model 지정을 빼세요." % (model, stype, TOGGLE, ROLE_OF_TYPE[stype]))
-    if effort:
-        if effort == "ultra":
-            deny("ultra는 강도가 아니라 다중 에이전트 모드라서 하청에 쓸 수 없습니다. reasoning_effort 지정을 빼세요.")
-        ok = {str(role.get(k) or "").lower() for k in ("configured_effort", "effort")} - {""}
-        if effort not in ok:
-            deny("하청 reasoning_effort 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 강도는 사용자가 터미널에서 `%s %s`로만 "
-                 "바꿉니다. effort 지정을 빼세요." % (effort, stype, TOGGLE, ROLE_OF_TYPE[stype]))
+    if model and model not in ({str(role.get(k) or "") for k in ("configured", "model")} - {""}):
+        deny("하청 model 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 모델은 사용자가 터미널에서 `%s %s`로만 바꿉니다. "
+             "model 지정을 빼세요." % (model, stype, toggle, ROLE_OF_TYPE[stype]))
+    if effort == "ultra":
+        deny("ultra는 강도가 아니라 다중 에이전트 모드라서 하청에 쓸 수 없습니다. reasoning_effort 지정을 빼세요.")
+    if effort and effort not in ({str(role.get(k) or "").lower() for k in ("configured_effort", "effort")} - {""}):
+        deny("하청 reasoning_effort 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 강도는 사용자가 터미널에서 `%s %s`로만 "
+             "바꿉니다. effort 지정을 빼세요." % (effort, stype, toggle, ROLE_OF_TYPE[stype]))
     allow()
 
 
@@ -125,9 +118,10 @@ def main():
 
     data = json.loads(raw or "{}")
     tool = str(data.get("tool_name") or "")
-    tool_input = data.get("tool_input")
-    if not isinstance(tool_input, dict):
-        tool_input = {}
+    ti = data.get("tool_input")
+    if not isinstance(ti, dict):
+        ti = {}
+    cfg = read_json(MODELS_FILE)
     subagent_fields = read_json(GATE_FILE).get("subagent_fields", True) is not False
 
     if os.environ.get("ORCH_BRIDGE") == "1":
@@ -142,11 +136,11 @@ def main():
         allow()
 
     if is_spawn(tool):
-        check_spawn(tool_input)
+        check_spawn(cfg, ti)
 
     if tool not in PATCH_TOOLS or not subagent_fields:
         allow()  # 저하 모드에서는 하청의 수정과 구별할 수 없으므로 세지 않는다
-    patch = tool_input.get("command")
+    patch = ti.get("command")
     if not isinstance(patch, str):
         allow()
     code = list(dict.fromkeys(p for p in patch_paths(patch) if is_code(p)))
@@ -163,7 +157,7 @@ def main():
     saved = read_json(gate_file)
     if saved.get("turn_id") == turn:
         gate = saved
-    elif saved or os.path.isdir(GATE_STATE_DIR):
+    else:  # 새 턴 — 카운터 리셋 + 하루 넘은 세션 상태 정리
         now = time.time()
         try:
             for fn in os.listdir(GATE_STATE_DIR):

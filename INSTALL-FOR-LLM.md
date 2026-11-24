@@ -141,6 +141,7 @@ oche status
 
 - `oche`: 터미널이면 키보드 화면(TUI), 아니면 현황판
 - `oche executor` / `oche deep-reasoner` / `oche runner`: 그 역할의 모델·강도 고르기
+- `oche preset`: 프리셋 목록, `oche preset use saver`(절약)·`oche preset use max`(최대)·`oche preset use default`(기본)로 한 번에 바꾸기
 - `~/.local/bin`이 PATH에 없으면 `~/.local/bin/oche on`처럼 전체 경로로 칩니다(Windows: `%USERPROFILE%\.local\bin\oche.cmd on`).
 
 ## 참고

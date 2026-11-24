@@ -576,6 +576,10 @@ def s13_windows():
     check("13 Windows 흉내: active.md 복사본", e.read(".claude/oche/active.md") == e.read(".claude/oche/rules.md"))
     c, out = e.install("verify")
     check("13 Windows 흉내: verify 통과", c == 0 and nofail(out), out)
+    c, out = e.oche("preset", "use", "saver")
+    check("13 Windows 흉내: preset use saver", c == 0 and e.toml("runner")["model"] == "gpt-6-luna", out)
+    c, out = e.oche("preset")
+    check("13 Windows 흉내: preset 목록 ✔ saver", "✔ saver" in out, out)
     c, out = e.install("install", "--command-name", "orch")
     check("13 Windows 흉내: --command-name orch → orch.cmd, 옛 oche.cmd 제거", c == 0 and os.path.isfile(e.p(".local/bin/orch.cmd"))
           and not os.path.exists(e.p(".local/bin/oche.cmd")), out)
@@ -714,7 +718,7 @@ for ascii_mode in (False, True):
     for W in (40, 60, 80, 100, 140, 200):
         for H in (15, 24, 40):
             st2 = tui.initial_state(); st2["ascii"] = ascii_mode
-            for screen in ("home", "model", "effort", "input"):
+            for screen in ("home", "model", "effort", "input", "preset", "preset_input"):
                 st2["screen"] = screen
                 if screen != "home":
                     st2["target"], st2["role"] = "claude", "executor"
@@ -750,6 +754,19 @@ after = open(os.path.join(os.environ["HOME"], ".claude", ".oche-state")).read().
 st = tui.handle_key(st, "enter")
 again = open(os.path.join(os.environ["HOME"], ".claude", ".oche-state")).read().strip()
 q = tui.handle_key(tui.initial_state(), "q").get("quit")
+st = tui.initial_state(); ids = [it["id"] for it in tui.menu_items(st)]
+order = [i for i in ids if not i.startswith(("switch:", "role:"))]
+st["cursor"] = ids.index("preset"); st = tui.handle_key(st, "enter"); ps = st["screen"]
+popts = [o["value"] for o in tui.preset_options_for(st)]
+st["pcursor"] = popts.index("saver"); st = tui.handle_key(st, "enter")
+cfgp = json.load(open(os.path.join(os.environ["HOME"], ".oche", "config.json")))
+pres = {"screen": st["screen"], "status": st["status"], "ex": cfgp["targets"]["claude"]["roles"]["executor"], "head": tui.strip_ansi(tui.render(st, 100, 24)[0])}
+st["cursor"] = ids.index("preset"); st = tui.handle_key(st, "enter")
+st["pcursor"] = len(tui.preset_options_for(st)) - 1; st = tui.handle_key(st, "enter"); pin = st["screen"]
+for ch in "내설정": st = tui.handle_key(st, ch)
+st = tui.handle_key(st, "enter"); saved = "내설정" in json.load(open(os.path.join(os.environ["HOME"], ".oche", "config.json"))).get("presets", {})
+psave = st["screen"]; st = tui.handle_key(st, "esc"); pback = st["screen"]
+print(json.dumps({"order": order, "ps": ps, "pres": pres, "pin": pin, "saved": saved, "psave": psave, "pback": pback}, ensure_ascii=False))
 keys = [tui.decode_windows(b) for b in (b"\xe0H", b"\xe0P", b"\x00H", b"\r", b"\x1b", b"q", b"k", b"j", b"\xe0K")]
 posix = [tui.decode_posix(b) for b in (b"\x1b[A", b"\x1b[B", b"\x1bOA", b"\r", b"\n", b"\x1b", b"\x1b[D", b"q")]
 print(json.dumps({"s1": s1, "s2": s2, "model": r["model"], "effort": r["effort"], "status": st.get("status", ""),
@@ -759,7 +776,7 @@ print(json.dumps({"s1": s1, "s2": s2, "model": r["model"], "effort": r["effort"]
     lines = out.strip().splitlines()
     try:
         a = json.loads(lines[0])
-        b = json.loads(lines[1])
+        b = json.loads(lines[2])
     except Exception:
         check("19 TUI 단위 시험 실행", False, out + err)
         e.cleanup()
@@ -768,6 +785,17 @@ print(json.dumps({"s1": s1, "s2": s2, "model": r["model"], "effort": r["effort"]
     check("19 TUI handle_key: 홈 → executor → 모델 → 강도 → 적용", b["s1"] == "model" and b["s2"] == "effort"
           and b["model"] == "sonnet" and b["effort"] == "medium", b)
     check("19 TUI handle_key: Esc 로 뒤로", b["back"] == "home", b)
+    try:
+        c3 = json.loads(lines[1])
+    except Exception:
+        c3 = {}
+    check("19 TUI 홈 메뉴 순서: 역할 → 프리셋 → 모델 목록 갱신 → 자가 시험 → 나가기",
+          c3.get("order") == ["preset", "update", "selftest", "quit"], c3)
+    check("19 TUI 프리셋: 목록 → saver Enter → 적용·홈 복귀·상태줄·상단 표시",
+          c3.get("ps") == "preset" and c3["pres"]["screen"] == "home" and "적용됨" in c3["pres"]["status"]
+          and c3["pres"]["ex"] == {"model": "sonnet", "effort": "medium"} and "프리셋: 절약" in c3["pres"]["head"], c3)
+    check("19 TUI 프리셋: '지금 설정 저장' → 이름 입력 → 저장 → Esc 로 홈", c3.get("pin") == "preset_input" and c3.get("saved")
+          and c3.get("psave") == "preset" and c3.get("pback") == "home", c3)
     check("19 TUI handle_key: ON/OFF 토글", b["toggle"] == ["on", "off", "on"], b)
     check("19 TUI handle_key: 홈에서 q 종료", b["quit"] is True, b)
     check("19 TUI Windows 키 해석", b["win"] == ["up", "down", "up", "enter", "esc", "q", "k", "j", "left"], b)
@@ -893,13 +921,75 @@ def s23_off_and_path():
     e.cleanup()
 
 
+def s24_presets():
+    e = Env("presets")
+    e.install("install")
+    c, out = e.oche("preset")
+    check("24 preset 목록: 내장 3종, 기본값과 일치 ✔", c == 0 and "✔ default (기본)" in out and "saver (절약)" in out
+          and "max (최대)" in out, out)
+    c, out = e.oche("--plain")
+    check("24 현황판 상단: 프리셋: 기본", "프리셋: 기본" in out, out)
+    c, out = e.oche("preset", "use", "saver")
+    ex, dr, rn = (e.read(".claude/agents/%s.md" % r) for r in ("executor", "deep-reasoner", "runner"))
+    check("24 saver(절약) 적용 — Claude 정의 파일", c == 0 and (frontmatter(ex, "model"), frontmatter(ex, "effort")) == ("sonnet", "medium")
+          and (frontmatter(dr, "model"), frontmatter(dr, "effort")) == ("opus", "high")
+          and (frontmatter(rn, "model"), frontmatter(rn, "effort")) == ("haiku", "low") and "다음 세션부터" in out, out)
+    check("24 saver 적용 — Codex TOML", e.toml("executor") == {"name": "executor", "model": "gpt-6.1-terra", "model_reasoning_effort": "medium"}
+          and e.toml("deep-reasoner")["model_reasoning_effort"] == "high" and e.toml("runner")["model"] == "gpt-6-luna")
+    check("24 saver 적용 — 게이트도 새 값으로", e.gate("claude", {"tool_name": "Agent", "tool_input": {"subagent_type": "executor", "model": "sonnet", "effort": "medium"}}) == 0
+          and e.gate("claude", {"tool_name": "Agent", "tool_input": {"subagent_type": "executor", "model": "opus"}}) == 2)
+    c, out = e.oche("--plain")
+    check("24 현황판: 프리셋: 절약", "프리셋: 절약" in out, out)
+    c, out = e.oche("preset", "use", "max", "codex")
+    check("24 max(최대)를 Codex에만 적용", c == 0 and e.toml("deep-reasoner")["model_reasoning_effort"] == "max"
+          and e.toml("runner")["model_reasoning_effort"] == "medium" and frontmatter(e.read(".claude/agents/executor.md"), "model") == "sonnet", out)
+    c, out = e.oche("--plain")
+    check("24 대상마다 다르면 프리셋: 사용자 지정", "프리셋: 사용자 지정" in out, out)
+    c, out = e.oche("preset", "save", "내조합")
+    check("24 save 한글 이름", c == 0 and "내조합" in json.loads(e.read(".oche/config.json"))["presets"], out)
+    c, out = e.oche("preset")
+    check("24 사용자 프리셋이 지금 설정과 일치 ✔", "✔ 내조합 (사용자)" in out, out)
+    for bad in ("saver", "절약", "default", "내 것"):
+        c, out = e.oche("preset", "save", bad)
+        check("24 save 거부: '%s'" % bad, c == 2, out)
+    e.oche("preset", "use", "default")
+    c, out = e.oche("preset", "use", "내조합")
+    check("24 use 사용자 프리셋", c == 0 and e.toml("deep-reasoner")["model_reasoning_effort"] == "max"
+          and frontmatter(e.read(".claude/agents/executor.md"), "model") == "sonnet", out)
+    c, out = e.oche("preset", "delete", "max")
+    check("24 내장 프리셋은 지울 수 없음", c == 2, out)
+    c, out = e.oche("preset", "delete", "내조합")
+    check("24 delete 사용자 프리셋", c == 0 and "내조합" not in json.loads(e.read(".oche/config.json")).get("presets", {}), out)
+    c, out = e.oche("preset", "use", "없는것")
+    check("24 없는 프리셋 거부", c == 2, out)
+    c, out = e.oche("selftest")
+    check("24 프리셋 적용 뒤 selftest 통과", c == 0 and nofail(out), out)
+    e.cleanup()
+
+    # 계열 없음 대체 + 강도 강등
+    m = [x for x in default_models() if not x["slug"].endswith("-luna")]
+    for x in m:
+        if x["slug"] == "gpt-6.2-sol":
+            x["supported_reasoning_levels"] = lv("low", "medium", "high", "xhigh")
+    e = Env("presets-fallback", claude=False, models=m)
+    e.install("install")
+    c, out = e.oche("preset", "use", "saver")
+    check("24 목록에 luna 계열이 없으면 runner 만 기본값(최신 terra)으로 + 안내", c == 0 and e.toml("runner")["model"] == "gpt-6.1-terra"
+          and "luna 계열이 없어 runner는 기본값" in out, out)
+    c, out = e.oche("preset", "use", "max")
+    check("24 모델이 max 를 지원하지 않으면 강등(xhigh)", c == 0 and e.toml("deep-reasoner")["model_reasoning_effort"] == "xhigh", out)
+    c, out = e.oche("preset")
+    check("24 강등된 값으로도 max 와 일치 ✔", "✔ max (최대)" in out, out)
+    e.cleanup()
+
+
 SCENARIOS = [
     ("claude_only", s01_claude_only), ("codex_only", s02_codex_only), ("legacy", s03_legacy),
     ("idempotent", s04_idempotent), ("switch_gate", s05_switch_and_gate), ("sync", s06_sync),
     ("effort", s07_effort_downgrade), ("override", s08_override), ("preserve_uninstall", s09_preserve_and_s11_uninstall),
     ("hook_path", s10_hook_path), ("degraded", s12_degraded), ("windows", s13_windows), ("command_name", s14_command_name),
     ("roles", s15_roles), ("interactive", s16_interactive_and_dashboard), ("bridge", s18_bridge),
-    ("catalog", s22_catalog), ("off_path", s23_off_and_path), ("tui_units", s19_tui_units), ("tui_pty", s20_tui_pty), ("plain", s21_plain_flag),
+    ("catalog", s22_catalog), ("presets", s24_presets), ("off_path", s23_off_and_path), ("tui_units", s19_tui_units), ("tui_pty", s20_tui_pty), ("plain", s21_plain_flag),
 ]
 
 

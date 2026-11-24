@@ -26,7 +26,7 @@ flowchart LR
 
 | 경로 | 내용 |
 |---|---|
-| `~/.oche/config.json` | 명령 이름, 대상별 폴더·버전, 역할별 `{model, effort}`, Codex 자동 갱신 여부·저하 모드 |
+| `~/.oche/config.json` | 명령 이름, 대상별 폴더·버전, 역할별 `{model, effort}`, Codex 자동 갱신 여부·저하 모드, 사용자 프리셋(`presets`) |
 | `~/.oche/catalog.json` | 대상별 `{families: {계열: 최신ID}, models, efforts, source, tool_version, updated_at}` |
 | `~/.oche/log.txt` | 기록 |
 | `~/.oche/assets/` | `install.py`·`oche/` 사본 |

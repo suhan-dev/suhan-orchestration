@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 PROJECT = "suhan-orchestration"
 WRAPPER_MARK = "oche-wrapper"
 DEFAULT_NAME = "oche"
@@ -631,10 +631,16 @@ def write_claude_agents(p, cfg, roles=ROLES, force=False, backup=None):
     return skipped
 
 
+def gate_extras(cfg, target):
+    """게이트가 함께 읽는 값(메시지에 쓰는 명령 이름)."""
+    return {"command_name": cmd_name(cfg)}
+
+
 def write_claude_roles(p, cfg):
     roles = {r: claude_role_entry(role_cfg(cfg, "claude", r)) for r in ROLES}
-    write_json(p["roles"], {"command_name": cmd_name(cfg), "roles": roles,
-                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    data = {"roles": roles, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    data.update(gate_extras(cfg, "claude"))
+    write_json(p["roles"], data)
 
 
 def claude_set_switch(p, on):
@@ -776,6 +782,7 @@ def write_codex_agents(p, cfg, res, roles=ROLES, force=False, backup=None, sourc
     data["auto_update"] = cfg["targets"]["codex"].get("auto_update", True)
     data["main_model"] = cfg["targets"]["codex"].get("main_model")
     data["app_version"] = cfg["targets"]["codex"].get("app_version")
+    data.update(gate_extras(cfg, "codex"))
     data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     if source:
         data["source"] = source
@@ -1136,30 +1143,232 @@ def apply_target(cfg, target, roles=ROLES, live=False, quiet=False):
     return skipped
 
 
-def set_role(cfg, target, role, model_in, effort_in):
+def set_role(cfg, target, role, model_in, effort_in, quiet=False, fit=False):
+    """역할 하나의 모델·강도를 바꾸고 정의 파일·게이트 설정에 반영한다. quiet 면 안내 줄을 돌려준다.
+    fit 이면 그 모델이 지원하지 않는 강도를 가장 가까운 아래 값으로 바꾼다(프리셋용)."""
     name = cmd_name(cfg)
     if target not in installed_targets(cfg):
         raise UserError("%s 대상은 설치되어 있지 않습니다." % TARGET_LABEL.get(target, target))
     rc = role_cfg(cfg, target, role)
     model = norm_model(target, model_in, cfg) if model_in else rc["model"]
     options = effort_options(target, model, cfg)
-    if effort_in:
+    if effort_in and fit and str(effort_in).lower() not in options:
+        effort = sync_mod().fit_effort(str(effort_in).lower(), options)
+    elif effort_in:
         effort = norm_effort(effort_in, options)
     elif rc["effort"] in options:
         effort = rc["effort"]
     else:
         effort = sync_mod().fit_effort(rc["effort"], options)
-    for n in model_notes(target, model, effort, role, cfg):
-        print(n)
+    notes = model_notes(target, model, effort, role, cfg)
     rc["model"], rc["effort"] = model, effort
     save_config(cfg)
-    apply_target(cfg, target, (role,))
+    apply_target(cfg, target, (role,), quiet=quiet)
+    if quiet:
+        return notes
+    for n in notes:
+        print(n)
     print("적용: %s %s → 모델 %s, 강도 %s. 다음 세션부터 적용됩니다." % (TARGET_LABEL[target], role, model, effort_label(effort)))
     print("확인: %s" % name)
 
 
 def effort_label(e):
     return EFFORT_NICK.get(e, e)
+
+
+# ======================================================================
+# 프리셋 — 역할 3개의 {model, effort} 묶음
+# ======================================================================
+
+def _r(m, e):
+    return {"model": m, "effort": e}
+
+
+BUILTIN_PRESETS = {
+    "default": {"label": "기본",
+                "claude": {"executor": _r("opus", "high"), "deep-reasoner": _r("opus", "xhigh"), "runner": _r("haiku", "low")},
+                "codex": {"executor": _r("sol", "high"), "deep-reasoner": _r("sol", "xhigh"), "runner": _r("terra", "low")}},
+    "saver": {"label": "절약",
+              "claude": {"executor": _r("sonnet", "medium"), "deep-reasoner": _r("opus", "high"), "runner": _r("haiku", "low")},
+              "codex": {"executor": _r("terra", "medium"), "deep-reasoner": _r("sol", "high"), "runner": _r("luna", "low")}},
+    "max": {"label": "최대",
+            "claude": {"executor": _r("opus", "xhigh"), "deep-reasoner": _r("opus", "max"), "runner": _r("haiku", "medium")},
+            "codex": {"executor": _r("sol", "xhigh"), "deep-reasoner": _r("sol", "max"), "runner": _r("terra", "medium")}},
+}
+BUILTIN_ORDER = ("default", "saver", "max")
+
+
+def user_presets(cfg):
+    p = cfg.get("presets")
+    return p if isinstance(p, dict) else {}
+
+
+def preset_list(cfg):
+    """[(id, 표시 이름, 정의, 내장 여부)]"""
+    out = [(k, BUILTIN_PRESETS[k]["label"], BUILTIN_PRESETS[k], True) for k in BUILTIN_ORDER]
+    for k in sorted(user_presets(cfg)):
+        out.append((k, k, user_presets(cfg)[k], False))
+    return out
+
+
+def find_preset(cfg, name):
+    n = str(name or "").strip()
+    for pid, label, d, builtin in preset_list(cfg):
+        if n in (pid, label) or (builtin and n.lower() == pid):
+            return pid, label, d, builtin
+    raise UserError("프리셋 '%s'이(가) 없습니다. `%s preset`으로 목록을 보세요." % (n, cmd_name(cfg)))
+
+
+def _builtin_model(target, fam, fams):
+    """내장 프리셋의 계열 이름을 그 대상의 설정값으로. 목록에 없으면 None."""
+    if fam not in fams:
+        return None
+    return fam if target == "claude" else "latest:" + fam
+
+
+def preset_values(cfg, pid, target, notes=None):
+    """프리셋을 그 대상에 적용했을 때의 역할별 (모델, 강도). 대상 값이 없으면 None."""
+    d = BUILTIN_PRESETS.get(pid) or user_presets(cfg).get(pid)
+    if not d or not isinstance(d.get(target), dict):
+        return None
+    builtin = pid in BUILTIN_PRESETS
+    fams = catalog_families(target)
+    out = {}
+    for role in ROLES:
+        v = d[target].get(role) or {}
+        model, effort = str(v.get("model") or ""), str(v.get("effort") or "")
+        if builtin:
+            m = _builtin_model(target, model, fams)
+            if m is None:
+                dv = BUILTIN_PRESETS["default"][target][role]
+                m = _builtin_model(target, dv["model"], fams) or role_cfg(cfg, target, role)["model"]
+                if notes is not None:
+                    notes.append("안내: %s 모델 목록에 %s 계열이 없어 %s는 기본값(%s)으로 둡니다."
+                                 % (TARGET_LABEL[target], model, role, model_label(target, m)))
+                if effort not in effort_options(target, m, cfg):
+                    effort = dv["effort"]
+            model = m
+        opts = effort_options(target, model, cfg)
+        if effort not in opts:
+            effort = sync_mod().fit_effort(effort, opts)
+        out[role] = (model, effort)
+    return out
+
+
+def current_preset(cfg):
+    """지금 설정과 일치하는 프리셋 (id, 표시 이름) 또는 None."""
+    targets = installed_targets(cfg)
+    if not targets:
+        return None
+    for pid, label, d, builtin in preset_list(cfg):
+        ok = True
+        for t in targets:
+            vals = preset_values(cfg, pid, t)
+            if vals is None or any((role_cfg(cfg, t, r)["model"], role_cfg(cfg, t, r)["effort"]) != vals[r] for r in ROLES):
+                ok = False
+                break
+        if ok:
+            return pid, label
+    return None
+
+
+def preset_label_line(cfg):
+    cur = current_preset(cfg)
+    return "프리셋: " + (cur[1] if cur else "사용자 지정")
+
+
+def describe_preset(cfg, pid, target):
+    vals = preset_values(cfg, pid, target)
+    if not vals:
+        return "(값 없음)"
+    return " / ".join("%s·%s" % (model_label(target, vals[r][0]), vals[r][1]) for r in ROLES)
+
+
+def apply_preset(cfg, name, which=None):
+    pid, label, d, builtin = find_preset(cfg, name)
+    targets = [which] if which else installed_targets(cfg)
+    notes, done = [], []
+    for t in targets:
+        if t not in installed_targets(cfg):
+            raise UserError("%s는 설치되어 있지 않습니다." % TARGET_LABEL.get(t, t))
+        vals = preset_values(cfg, pid, t, notes)
+        if vals is None:
+            notes.append("안내: 프리셋 '%s'에는 %s 값이 없어 건너뜁니다." % (label, TARGET_LABEL[t]))
+            continue
+        for role in ROLES:
+            for n in set_role(cfg, t, role, vals[role][0], vals[role][1], quiet=True, fit=True) or []:
+                if n not in notes and "최신 아님" not in n:
+                    notes.append(n)
+        done.append("%s %s" % (TARGET_LABEL[t], describe_preset(cfg, pid, t)))
+    log("preset use %s (%s)" % (pid, ",".join(targets)))
+    return label, notes, done
+
+
+def save_preset(cfg, name):
+    n = str(name or "").strip()
+    if not n or re.search(r"\s", n):
+        raise UserError("프리셋 이름은 공백 없는 글자여야 합니다: '%s'" % name)
+    reserved = set(BUILTIN_PRESETS) | {v["label"] for v in BUILTIN_PRESETS.values()}
+    if n in reserved or n.lower() in reserved:
+        raise UserError("'%s'은(는) 내장 프리셋 이름이라 쓸 수 없습니다." % n)
+    d = {}
+    for t in installed_targets(cfg):
+        d[t] = {r: dict(role_cfg(cfg, t, r)) for r in ROLES}
+    existed = n in user_presets(cfg)
+    cfg.setdefault("presets", {})[n] = d
+    save_config(cfg)
+    return existed
+
+
+def delete_preset(cfg, name):
+    n = str(name or "").strip()
+    if n in BUILTIN_PRESETS or n in {v["label"] for v in BUILTIN_PRESETS.values()}:
+        raise UserError("내장 프리셋은 지울 수 없습니다: %s" % n)
+    if n not in user_presets(cfg):
+        raise UserError("사용자 프리셋 '%s'이(가) 없습니다." % n)
+    del cfg["presets"][n]
+    save_config(cfg)
+
+
+def cmd_preset(cfg, args):
+    name = cmd_name(cfg)
+    if not args:
+        cur = current_preset(cfg)
+        print("프리셋 (✔ = 지금 설정과 일치)")
+        for pid, label, d, builtin in preset_list(cfg):
+            mark_ = "✔" if cur and cur[0] == pid else " "
+            head = "%s (%s)" % (pid, label) if builtin else "%s (사용자)" % pid
+            print(" %s %s" % (mark_, head))
+            for t in installed_targets(cfg):
+                print("      %-11s %s" % (TARGET_LABEL[t], describe_preset(cfg, pid, t)))
+        if not cur:
+            print("지금 설정: 사용자 지정")
+        print("쓰기: %s preset use <이름> [claude|codex] · 저장: %s preset save <이름> · 지우기: %s preset delete <이름>"
+              % (name, name, name))
+        return 0
+    sub_ = args[0]
+    if sub_ == "use":
+        if len(args) not in (2, 3) or (len(args) == 3 and args[2] not in TARGETS):
+            raise UserError("사용법: %s preset use <이름> [claude|codex]" % name)
+        label, notes, done = apply_preset(cfg, args[1], args[2] if len(args) == 3 else None)
+        for n in notes:
+            print(n)
+        print("프리셋 '%s' 적용: %s. 다음 세션부터 적용됩니다." % (label, "; ".join(done) or "바뀐 대상 없음"))
+        return 0
+    if sub_ == "save":
+        if len(args) != 2:
+            raise UserError("사용법: %s preset save <이름>" % name)
+        existed = save_preset(cfg, args[1])
+        print("프리셋 '%s' %s: 지금 설정(%s)을 담았습니다." % (args[1], "덮어씀" if existed else "저장",
+                                                       ", ".join(TARGET_LABEL[t] for t in installed_targets(cfg))))
+        return 0
+    if sub_ == "delete":
+        if len(args) != 2:
+            raise UserError("사용법: %s preset delete <이름>" % name)
+        delete_preset(cfg, args[1])
+        print("프리셋 '%s'을(를) 지웠습니다." % args[1])
+        return 0
+    raise UserError("사용법: %s preset [use <이름> [claude|codex] | save <이름> | delete <이름>]" % name)
 
 
 # ======================================================================
@@ -1194,6 +1403,7 @@ def dashboard(cfg, full=False):
     if not targets:
         print("설치된 대상이 없습니다. 저장소의 install.py로 설치하세요.")
         return 1
+    print(preset_label_line(cfg))
     warnings = []
     latest = None
     for target in targets:
@@ -1684,6 +1894,8 @@ def help_text(name):
                                      쓸 수 있는 계열은 `{n} models` 로 봅니다
                                강도: low|medium|high|xhigh(extra)|max  — ultra는 선택지가 아님
   {n} reset [claude|codex] [<역할>]  기본값으로 되돌리기
+  {n} preset                  프리셋 목록(default 기본 · saver 절약 · max 최대 · 사용자), 지금 설정과 일치하면 ✔
+  {n} preset use <이름> [claude|codex] / save <이름> / delete <이름>
   {n} update [claude|codex]   모델 목록 갱신(새 계열 알림) + Codex 최신 계열 다시 정함
   {n} pin <claude|codex> <역할> <모델ID> / {n} unpin <claude|codex> <역할>
   {n} selftest [claude|codex] 게이트 시험(켜짐·꺼짐 모두, 원래 상태로 되돌림)
@@ -1824,6 +2036,8 @@ def main(argv=None):
             return cmd_selftest(cfg, argv[1] if len(argv) > 1 else None)
         if c == "reset":
             return cmd_reset(cfg, argv[1:])
+        if c == "preset":
+            return cmd_preset(cfg, argv[1:])
         if c == "bridge":
             return cmd_bridge(cfg, argv[1:])
         if c == "pin":

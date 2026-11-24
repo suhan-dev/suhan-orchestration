@@ -32,7 +32,6 @@ CODE_EXTS = {
     "svelte", "astro", "css", "scss", "sass", "less", "html", "sh", "bash",
     "zsh", "sql", "lua", "dart", "scala", "ex", "exs", "zig", "ipynb", "ps1",
 }
-TOGGLE = "oche"
 
 
 def allow():
@@ -53,13 +52,10 @@ def read_text(path):
         return None
 
 
-def load_roles():
+def load_cfg():
     try:
         data = json.loads(read_text(ROLES_FILE) or "{}")
-        if data.get("command_name"):
-            global TOGGLE
-            TOGGLE = str(data["command_name"])
-        return data.get("roles") or {}
+        return data if isinstance(data, dict) else {}
     except ValueError:
         return {}
 
@@ -68,27 +64,24 @@ def is_code(path):
     return path.rsplit(".", 1)[-1].lower() in CODE_EXTS if "." in path else False
 
 
-def check_spawn(tool_input):
-    roles = load_roles()
-    stype = str(tool_input.get("subagent_type") or "")
-    model = str(tool_input.get("model") or "").strip()
-    effort = str(tool_input.get("effort") or "").strip().lower()
+def check_spawn(cfg, ti):
+    toggle = str(cfg.get("command_name") or "oche")
+    roles = cfg.get("roles") or {}
+    stype = str(ti.get("subagent_type") or "")
+    model = str(ti.get("model") or "").strip()
+    effort = str(ti.get("effort") or "").strip().lower()
     if stype not in ALLOWED_TYPES:
         deny("하청 타입 '%s'은(는) 부모 세션의 모델을 물려받으므로 금지입니다. "
              "executor·deep-reasoner·runner 중 하나로 띄우세요." % (stype or "(없음)"))
     role = roles.get(stype) or {}
-    if model:
-        ok = {str(role.get(k) or "") for k in ("configured", "model")} - {""}
-        if model not in ok:
-            deny("하청 model 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 모델은 사용자가 터미널에서 `%s %s`로만 바꿉니다. "
-                 "model 지정을 빼세요." % (model, stype, TOGGLE, stype))
-    if effort:
-        if effort == "ultra":
-            deny("ultra는 하청 강도로 쓸 수 없습니다. effort 지정을 빼세요.")
-        ok = {str(role.get(k) or "").lower() for k in ("configured_effort", "effort")} - {""}
-        if effort not in ok:
-            deny("하청 effort 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 강도는 사용자가 터미널에서 `%s %s`로만 바꿉니다. "
-                 "effort 지정을 빼세요." % (effort, stype, TOGGLE, stype))
+    if model and model not in ({str(role.get(k) or "") for k in ("configured", "model")} - {""}):
+        deny("하청 model 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 모델은 사용자가 터미널에서 `%s %s`로만 바꿉니다. "
+             "model 지정을 빼세요." % (model, stype, toggle, stype))
+    if effort == "ultra":
+        deny("ultra는 하청 강도로 쓸 수 없습니다. effort 지정을 빼세요.")
+    if effort and effort not in ({str(role.get(k) or "").lower() for k in ("configured_effort", "effort")} - {""}):
+        deny("하청 effort 지정 '%s'은(는) 역할 %s의 설정과 다릅니다. 강도는 사용자가 터미널에서 `%s %s`로만 바꿉니다. "
+             "effort 지정을 빼세요." % (effort, stype, toggle, stype))
     allow()
 
 
@@ -112,9 +105,11 @@ def main():
 
     data = json.loads(raw or "{}")
     tool = str(data.get("tool_name") or "")
-    tool_input = data.get("tool_input")
-    if not isinstance(tool_input, dict):
-        tool_input = {}
+    ti = data.get("tool_input")
+    if not isinstance(ti, dict):
+        ti = {}
+    cfg = load_cfg()
+    toggle = str(cfg.get("command_name") or "oche")
 
     # 다리 하청이 띄운 CLI 안: 직접 수행만 한다.
     if os.environ.get("ORCH_BRIDGE") == "1":
@@ -132,15 +127,15 @@ def main():
 
     if tool == "Workflow":
         deny("다중 에이전트 워크플로(ultracode)는 이 설정에서 금지입니다. 대신 Agent 도구로 executor에게 차례로 위임하세요. "
-             "정말 필요하면 사용자에게 먼저 확인하고 `%s off` 상태에서만 쓰세요." % TOGGLE)
+             "정말 필요하면 사용자에게 먼저 확인하고 `%s off` 상태에서만 쓰세요." % toggle)
 
     if tool in SPAWN_TOOLS:
-        check_spawn(tool_input)
+        check_spawn(cfg, ti)
 
     if tool not in EDIT_TOOLS:
         allow()  # Bash 등은 통과 — 게이트는 Edit/Write 경로의 파일 수만 센다
 
-    path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+    path = str(ti.get("file_path") or ti.get("notebook_path") or "")
     if not path or not is_code(path):
         allow()  # 설정·문서 등 비코드 파일은 직접 수정 허용
 

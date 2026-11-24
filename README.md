@@ -94,7 +94,7 @@ python3 install.py install --all --command-name orch
 터미널에서 `oche`를 인자 없이 실행하면 키보드로 조작하는 화면이 열립니다. 왼쪽은 메뉴, 오른쪽은 지금 구성도입니다.
 
 ```text
- oche · 하청 오케스트레이션 1.0.0
+ oche · 하청 오케스트레이션 1.1.0  ·  프리셋: 기본
 
    Claude Code                             ● ON          ╭──────────────────────────╮
  ❯   executor                       opus · high          │          사용자          │
@@ -106,10 +106,10 @@ python3 install.py install --all --command-name orch
      deep-reasoner             최신 sol · xhigh                       ↓
      runner                    최신 terra · low          ╭──────────────────────────╮
                                                          │        게이트 ON         │
-   모델 목록 갱신                                        ╰──────────────────────────╯
-   자가 시험                                       ↓              ↓              ↓
-   나가기                                   ╭──────────────╮╭──────────────╮╭──────────────╮
-                                            │executor      ││deep-reasoner ││runner        │
+   프리셋                                  기본          ╰──────────────────────────╯
+   모델 목록 갱신                                  ↓              ↓              ↓
+   자가 시험                                ╭──────────────╮╭──────────────╮╭──────────────╮
+   나가기                                   │executor      ││deep-reasoner ││runner        │
                                             │claude-opus-… ││claude-opus-… ││claude-haiku-…│
                                             │high          ││xhigh (extra) ││low           │
                                             ╰──────────────╯╰──────────────╯╰──────────────╯
@@ -146,6 +146,28 @@ oche reset codex runner                # 하나만 기본값으로
 - 계열 이름(`opus`, `sol` 등)을 쓰면 같은 계열의 새 버전이 나올 때 저절로 따라갑니다. 전체 ID를 쓰면 그 버전에 고정됩니다.
 - 쓸 수 있는 계열과 지금 매핑은 `oche models`로 봅니다. 새 계열이 나오면 목록에 저절로 나타나고 알림이 뜹니다(역할은 바꾸지 않음).
 
+### 프리셋
+
+역할 3개의 모델·강도 묶음을 이름으로 한 번에 바꿉니다. 설치된 대상(Claude Code·Codex) 모두에 적용되고, 대상을 적으면 그쪽만 바꿉니다.
+
+| id | 이름 | Claude Code (executor / deep-reasoner / runner) | Codex (executor / deep_reasoner / runner) |
+|---|---|---|---|
+| `default` | 기본 | opus·high / opus·xhigh / haiku·low | sol·high / sol·xhigh / terra·low |
+| `saver` | 절약 | sonnet·medium / opus·high / haiku·low | terra·medium / sol·high / luna·low |
+| `max` | 최대 | opus·xhigh / opus·max / haiku·medium | sol·xhigh / sol·max / terra·medium |
+
+```bash
+oche preset                     # 목록(지금 설정과 일치하는 것에 ✔)
+oche preset use saver           # 절약으로(Claude·Codex 모두)
+oche preset use max codex       # Codex만 최대로
+oche preset save 내조합         # 지금 설정을 사용자 프리셋으로 저장
+oche preset use 내조합
+oche preset delete 내조합
+```
+
+TUI에서는 홈의 **프리셋** 메뉴에서 고르고 Enter, 또는 "지금 설정 저장"에서 이름을 입력합니다. 현황판과 TUI 상단에
+`프리셋: 절약`(일치하는 것이 없으면 `프리셋: 사용자 지정`)이 보입니다.
+
 ### 명령 요약
 
 | 명령 | 하는 일 |
@@ -157,6 +179,8 @@ oche reset codex runner                # 하나만 기본값으로
 | `oche <역할>` | 모델·강도 고르기(TUI 또는 번호 선택) |
 | `oche [claude\|codex] <역할> <모델> [<강도>]` | 바로 바꾸기 |
 | `oche reset [claude\|codex] [<역할>]` | 기본값으로 |
+| `oche preset` | 프리셋 목록(일치하는 것에 ✔) |
+| `oche preset use <이름> [claude\|codex]` · `save <이름>` · `delete <이름>` | 프리셋 적용 · 지금 설정 저장 · 사용자 프리셋 지우기 |
 | `oche update [claude\|codex]` | 모델 목록 갱신(새 계열 알림), Codex 최신 계열 다시 정하기 |
 | `oche pin <대상> <역할> <ID>` / `oche unpin <대상> <역할>` | 특정 버전 고정 / 고정 풀기 |
 | `oche selftest [claude\|codex]` | 게이트 시험(켜짐·꺼짐 모두, 원래 상태로 되돌림) |
@@ -294,5 +318,6 @@ Codex는 0바이트입니다.
 7. [07-troubleshooting](docs/07-troubleshooting.md) — 문제 해결
 8. [08-limitations](docs/08-limitations.md) — 한계와 시험 범위
 - [INSTALL-FOR-LLM.md](INSTALL-FOR-LLM.md) — LLM에게 주는 설치 지시서
+- [CHANGELOG.md](CHANGELOG.md) — 변경 기록
 
 라이선스: MIT ([LICENSE](LICENSE)).

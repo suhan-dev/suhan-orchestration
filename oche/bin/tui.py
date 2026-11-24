@@ -108,7 +108,7 @@ def default_color():
 def snapshot():
     cfg = L.load_config()
     snap = {"name": L.cmd_name(cfg), "targets": L.installed_targets(cfg), "on": {}, "roles": {}, "path_ok": L.path_has_local_bin(),
-            "degraded": False}
+            "degraded": False, "preset": L.preset_label_line(cfg) if L.installed_targets(cfg) else ""}
     cf = L.catalog_families("claude")
     for t in snap["targets"]:
         tc = cfg["targets"][t]
@@ -129,7 +129,7 @@ def snapshot():
 
 
 def initial_state(target=None, role=None):
-    st = {"screen": "home", "cursor": 0, "mcursor": 0, "ecursor": 0, "tcursor": 0, "status": "", "ascii": default_ascii(),
+    st = {"screen": "home", "cursor": 0, "mcursor": 0, "ecursor": 0, "tcursor": 0, "pcursor": 0, "status": "", "ascii": default_ascii(),
           "color": default_color(), "target": target, "role": role, "model_choice": None, "input": "", "quit": False,
           "single": False, "snap": snapshot()}
     if role:
@@ -157,6 +157,7 @@ def menu_items(st):
             rv = snap["roles"][t][r]
             items.append({"id": "role:%s:%s" % (t, r), "label": "  " + r,
                           "detail": "%s · %s" % (short_model(t, rv["model"]), rv["effort"]), "kind": "role"})
+    items.append({"id": "preset", "label": "프리셋", "detail": snap.get("preset", "").replace("프리셋: ", ""), "kind": "action"})
     items.append({"id": "update", "label": "모델 목록 갱신", "detail": "", "kind": "action"})
     items.append({"id": "selftest", "label": "자가 시험", "detail": "", "kind": "action"})
     items.append({"id": "quit", "label": "나가기", "detail": "", "kind": "action"})
@@ -183,6 +184,18 @@ def effort_options_for(st):
     cur = st["snap"]["roles"][st["target"]][st["role"]]["effort"]
     return [{"label": L.effort_label(e), "value": e, "current": e == cur}
             for e in L.effort_options(st["target"], st["model_choice"], cfg)]
+
+
+def preset_options_for(st):
+    cfg = L.load_config()
+    cur = L.current_preset(cfg)
+    out = []
+    for pid, label, d, builtin in L.preset_list(cfg):
+        desc = " · ".join("%s %s" % (L.TARGET_LABEL[t], L.describe_preset(cfg, pid, t)) for t in st["snap"]["targets"])
+        out.append({"label": label if builtin else pid, "value": pid, "desc": desc if builtin else "(사용자) " + desc,
+                    "current": bool(cur and cur[0] == pid)})
+    out.append({"label": "지금 설정 저장", "value": "__save__", "desc": "이름을 붙여 사용자 프리셋으로", "current": False})
+    return out
 
 
 def open_model(st):
@@ -227,8 +240,15 @@ def handle_key(st, key):
     if key == "ctrl-c":
         st["quit"] = True
         return st
-    if scr == "input":
+    if scr in ("input", "preset_input"):
         if key == "enter":
+            if scr == "preset_input":
+                code, out, err = capture(L.cmd_preset, L.load_config(), ["save", st["input"]])
+                st["status"] = out.strip().splitlines()[-1] if code == 0 and out.strip() else (err.strip() or "저장 실패")
+                if code == 0:
+                    st["snap"] = snapshot()
+                    st["screen"] = "preset"
+                return st
             try:
                 m = L.norm_model(st["target"], st["input"], L.load_config())
                 open_effort(st, m)
@@ -236,7 +256,7 @@ def handle_key(st, key):
             except L.UserError as e:
                 st["status"] = str(e)
         elif key in ("esc", "left"):
-            st["screen"] = "model"
+            st["screen"] = "model" if scr == "input" else "preset"
         elif key == "backspace":
             st["input"] = st["input"][:-1]
         elif len(key) == 1 and key.isprintable():
@@ -266,6 +286,11 @@ def handle_key(st, key):
                 _, t, r = act.split(":")
                 st["target"], st["role"] = t, r
                 open_model(st)
+            elif act == "preset":
+                st["screen"] = "preset"
+                opts = preset_options_for(st)
+                cur = [i for i, o in enumerate(opts) if o["current"]]
+                st["pcursor"] = cur[0] if cur else 0
             elif act == "update":
                 code, out, err = capture(L.cmd_update, L.load_config(), None)
                 notes = [l for l in out.splitlines() if l.startswith("알림:")]
@@ -276,6 +301,28 @@ def handle_key(st, key):
                 last = [l for l in out.splitlines() if l.startswith("selftest:")]
                 st["status"] = "자가 시험 " + (last[-1].split(":", 1)[1].strip() if last else "실패")
                 st["snap"] = snapshot()
+        return st
+    if scr == "preset":
+        opts = preset_options_for(st)
+        if key == "up":
+            st["pcursor"] = (st["pcursor"] - 1) % len(opts)
+        elif key == "down":
+            st["pcursor"] = (st["pcursor"] + 1) % len(opts)
+        elif key in ("esc", "left", "q"):
+            st["screen"] = "home"
+        elif key in ("enter", "right"):
+            v = opts[st["pcursor"]]["value"]
+            if v == "__save__":
+                st["screen"] = "preset_input"
+                st["input"] = ""
+            else:
+                code, out, err = capture(L.cmd_preset, L.load_config(), ["use", v])
+                if code == 0:
+                    st["status"] = "프리셋 '%s' 적용됨 — 다음 세션부터" % opts[st["pcursor"]]["label"]
+                    st["snap"] = snapshot()
+                    st["screen"] = "home"
+                else:
+                    st["status"] = err.strip() or "적용 실패"
         return st
     if scr == "target":
         targets = st["snap"]["targets"]
@@ -486,8 +533,8 @@ def footer(st, P):
     scr = st["screen"]
     if scr == "home":
         keys = "↑↓ 이동 · Enter 선택 · q 나가기"
-    elif scr == "input":
-        keys = "모델 ID 입력 · Enter 확인 · Esc 뒤로"
+    elif scr in ("input", "preset_input"):
+        keys = ("모델 ID" if scr == "input" else "이름") + " 입력 · Enter 확인 · Esc 뒤로"
     else:
         keys = "↑↓ 이동 · Enter 선택 · Esc 뒤로"
     if P.ascii:
@@ -501,6 +548,8 @@ def render(st, width, height):
     snap = st["snap"]
     name = snap["name"]
     head = P.acc(P.bold("%s" % name)) + P.dim(" · 하청 오케스트레이션 %s" % L.VERSION)
+    if snap.get("preset"):
+        head += P.dim("  ·  ") + snap["preset"]
     body = []
     scr = st["screen"]
     if not snap["targets"]:
@@ -524,6 +573,18 @@ def render(st, width, height):
                 body.append("")
                 body.extend(" " + l for l in diagram(st, W - 2, P))
         body = window(body, st["cursor"], avail)
+    elif scr in ("preset", "preset_input"):
+        body.append(" " + P.bold("프리셋") + P.dim(" — 역할 3개의 모델·강도 묶음 · %s 지금 설정과 일치" % P.check))
+        body.append("")
+        avail = max(1, H - 4 - len(body))
+        if scr == "preset":
+            lines = list_lines(preset_options_for(st), st["pcursor"], W - 2, P)
+            body.extend(" " + l for l in window(lines, st["pcursor"], avail))
+        else:
+            body.append(" " + P.dim("지금 설정을 저장할 이름(공백 없이, 내장 이름 default·saver·max·기본·절약·최대는 못 씀)"))
+            fw = max(4, min(W - 4, 40))
+            for l in P.box([st["input"] + P.acc("_")], fw, ACCENT):
+                body.append(" " + l)
     elif scr == "target":
         body.append(P.bold(" 어느 쪽 하청을 바꿀까요? (%s)" % (st["role"] or "")))
         body.append("")
@@ -563,7 +624,8 @@ def render(st, width, height):
     lines.extend(body[:room])
     while len(lines) < H - 2:
         lines.append("")
-    stat = P.c(OK_C, status) if status.startswith("적용됨") or "ON" in status[:20] else (P.c(WARN_C, status) if status else P.dim(" · ".join(warn)))
+    good = status.startswith("적용됨") or "적용됨" in status or "ON" in status[:20] or "저장" in status[:30]
+    stat = P.c(OK_C, status) if good else (P.c(WARN_C, status) if status else P.dim(" · ".join(warn)))
     lines.append(" " + stat)
     lines.append(" " + footer(st, P))
     lines = lines[-H:] if len(lines) > H else lines

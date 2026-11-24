@@ -37,7 +37,8 @@ oche --plain         # 화면 대신 텍스트 현황판
 | 글자, Backspace | "직접 입력" 칸에서 입력 |
 | Ctrl-C | 바로 종료(터미널은 복구됨) |
 
-홈 메뉴: Claude Code ON/OFF, Codex ON/OFF, 대상별 역할 3개(지금 모델·강도), 모델 목록 갱신, 자가 시험, 나가기.
+홈 메뉴: Claude Code ON/OFF, Codex ON/OFF, 대상별 역할 3개(지금 모델·강도), 프리셋, 모델 목록 갱신, 자가 시험, 나가기.
+화면 맨 위에는 지금 설정과 일치하는 프리셋(`프리셋: 기본` 또는 `프리셋: 사용자 지정`)이 보입니다.
 오른쪽(넓을 때)이나 아래(중간 폭)에는 사용자 → 메인 → 게이트 → 하청 3개 구성도가 그려지고, 상자마다 지금 모델·강도가 들어갑니다.
 좁으면(60칸 미만이나 높이 부족) 그림 없이 목록만 보입니다.
 
@@ -73,7 +74,8 @@ oche status         # + 부품 점검
 ```
 
 ```text
-oche 1.0.0 — 하청 오케스트레이션 (명령 이름: oche)
+oche 1.1.0 — 하청 오케스트레이션 (명령 이름: oche)
+프리셋: 기본
 
 [Claude Code] ON   (~/.claude, Claude Code 2.1.321)
   역할           모델(설정 → 실제)         강도
@@ -145,6 +147,50 @@ oche unpin codex executor               # 기본 모델로(강도 유지)
 | executor | `opus` · high | 최신 `sol` · high |
 | deep-reasoner | `opus` · xhigh | 최신 `sol` · xhigh |
 | runner | `haiku` · low | 최신 `terra` · low |
+
+## 프리셋
+
+프리셋은 역할 3개(executor·deep-reasoner·runner)의 `{model, effort}` 묶음에 이름을 붙인 것입니다. Claude Code 값과 Codex 값을
+함께 담습니다. 적용하면 역할마다 위의 역할 설정과 같은 함수를 불러 정의 파일·게이트 설정이 함께 바뀌고, 다음 세션부터 적용됩니다.
+
+내장 프리셋(지울 수 없음):
+
+| id | 이름 | Claude Code (executor / deep-reasoner / runner) | Codex (executor / deep_reasoner / runner) |
+|---|---|---|---|
+| `default` | 기본 | opus·high / opus·xhigh / haiku·low | sol·high / sol·xhigh / terra·low |
+| `saver` | 절약 | sonnet·medium / opus·high / haiku·low | terra·medium / sol·high / luna·low |
+| `max` | 최대 | opus·xhigh / opus·max / haiku·medium | sol·xhigh / sol·max / terra·medium |
+
+- 내장 프리셋의 모델은 계열 이름입니다(Claude는 별칭, Codex는 그 계열 최신). 모델 목록에 그 계열이 없으면 그 역할만 `default` 값으로 두고 한 줄로 알립니다.
+- 모델이 그 강도를 지원하지 않으면 가장 가까운 아래 값을 씁니다(예: max를 지원하지 않으면 xhigh).
+
+```bash
+oche preset                       # 목록. 지금 설정과 일치하는 것에 ✔
+oche preset use saver             # 설치된 대상 모두에 적용
+oche preset use 절약              # 표시 이름으로도 됨
+oche preset use max codex         # Codex만
+oche preset save 내조합           # 지금 설정(설치된 대상 모두)을 사용자 프리셋으로 저장
+oche preset use 내조합
+oche preset delete 내조합
+```
+
+```text
+프리셋 (✔ = 지금 설정과 일치)
+ ✔ default (기본)
+      Claude Code opus·high / opus·xhigh / haiku·low
+      Codex       최신 sol·high / 최신 sol·xhigh / 최신 terra·low
+   saver (절약)
+      Claude Code sonnet·medium / opus·high / haiku·low
+      Codex       최신 terra·medium / 최신 sol·high / 최신 luna·low
+   max (최대)
+   …
+```
+
+- 사용자 프리셋은 `~/.oche/config.json`의 `presets`에 저장됩니다. 이름은 공백 없는 글자면 되고(한글 가능), 내장 이름
+  (`default`·`saver`·`max`·`기본`·`절약`·`최대`)과 겹치면 거부합니다. 같은 이름으로 다시 저장하면 덮어씁니다.
+- 대상마다 다른 프리셋을 적용했거나 역할을 따로 바꿨으면 `프리셋: 사용자 지정`으로 보입니다.
+- TUI: 홈의 **프리셋** → 목록에서 Enter로 적용(홈으로 돌아와 상태줄에 "프리셋 '절약' 적용됨 — 다음 세션부터") ·
+  **지금 설정 저장** → 이름 입력 → Enter. Esc로 돌아옵니다.
 
 ## 모델 목록
 
