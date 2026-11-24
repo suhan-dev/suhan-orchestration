@@ -81,7 +81,7 @@ where oche               :: cmd
 
 | plan의 충돌 | 물어볼 것 | 동의하면 붙일 플래그 |
 |---|---|---|
-| 옛 fable 설치본 | "옛 설치본을 옮길까요? 옛 폴더와 옛 명령은 지우지 않습니다" | `--migrate-legacy` |
+| 작동 중인 옛 fable 설치본(`CLAUDE.md`의 `fable/active.md` 줄 또는 `orchestration-gate` 훅. 옛 폴더·옛 명령만 남은 것은 충돌이 아니라 안내) | "옛 설치본을 옮길까요? 옛 폴더와 옛 명령은 지우지 않습니다" | `--migrate-legacy` |
 | 같은 이름의 하청 정의가 oche 것이 아님 | "백업하고 교체할까요?" | `--force-agents` |
 | 이름 충돌 | "어떤 이름으로 설치할까요?" | `--command-name <이름>` |
 | PATH에 `~/.local/bin` 없음 | "셸 설정(또는 Windows 사용자 PATH)에 추가할까요? 백업합니다" | `--add-to-path` |

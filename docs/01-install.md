@@ -111,8 +111,9 @@ python3 install.py install --all --add-to-path
 
 ## 옛 fable 설치본에서 옮기기
 
-다음 중 하나라도 있으면 옛 설치본으로 봅니다: `~/.claude/fable/` 폴더, `CLAUDE.md`의 `fable/active.md` 줄,
-`settings.json`의 `orchestration-gate` 훅, `~/.local/bin/fable`. 이때 plain `install`은 Claude 대상을 거부합니다.
+`CLAUDE.md`의 `fable/active.md` 줄이나 `settings.json`의 `orchestration-gate` 훅이 있으면 작동 중인 옛 설치본으로 봅니다.
+이때 plain `install`은 Claude 대상을 거부합니다. `~/.claude/fable/` 폴더와 `~/.local/bin/fable`만 남아 있으면(옮긴 뒤가 그렇습니다)
+재설치를 막지 않고, plan과 install 출력에 "옛 fable 파일이 남아 있지만 더는 쓰이지 않습니다"라는 안내만 나옵니다.
 
 ```bash
 python3 install.py install --only claude --migrate-legacy

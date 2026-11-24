@@ -29,7 +29,8 @@
 - 다른 쪽 CLI 설치·로그인이 필요합니다.
 - 다리 하청은 셸 도구로 다른 CLI를 부르므로 셸 도구의 시간 제한(약 10분)에 걸릴 수 있습니다.
 - 권한·샌드박스는 다른 쪽 CLI 설정을 따릅니다(`codex exec -s workspace-write`, `claude -p --permission-mode acceptEdits`).
-- 시험은 명령 조립(dry-run)까지만 했습니다. 실제 두 CLI를 잇는 실행은 시험하지 않았습니다.
+- Claude 쪽 역할을 Codex 모델로 넘기는 다리 명령(`oche bridge codex …`)은 실제로 한 번 돌려 확인했습니다(가장 싼 모델에 한 단어 답하기를 시켰고, 답이 결과 파일로 돌아왔습니다).
+- Codex 쪽 역할을 Claude 모델로 넘기는 방향과, 세션 안에서 다리 하청이 이 명령을 부르는 전체 경로는 시험하지 않았습니다.
 
 ## 시험 범위
 
@@ -71,19 +72,33 @@ Python 3.9와 3.14에서 실행했고, 3.8은 문법 검사만 했습니다.
 - 지정 없이 `executor` 호출 → 통과. 하청이 답한 자기 모델 ID는 `claude-opus-5-5`였습니다(정의 파일의 별칭 `opus`가 최신으로 해석됨).
 - `general-purpose` 하청 → 차단(`하청 타입 'general-purpose'은(는) 부모 세션의 모델을 물려받으므로 금지입니다`).
 - 메인이 코드 파일 3개를 직접 만들기 → 3개째 차단(`이번 턴에 메인이 직접 수정한 코드 파일이 이미 2개입니다`).
+- 호출 때 모델을 바꿔 넣기(`executor`, `model: haiku`) → 차단(`하청 model 지정 'haiku'은(는) 역할 executor의 설정과 다릅니다`).
 
 이것으로 실제 훅 입력의 `tool_name`(`Agent`·`Write`), `tool_input.subagent_type`·`effort`·`file_path`, 턴 id가 가정과 맞는 것을 확인했습니다.
 게이트 훅은 설치 직후 이미 열려 있던 세션에도 적용되는 것을 관찰했습니다. 규칙 문서는 새 세션부터 읽힙니다.
 
-실제 세션에서 확인하지 못한 것은 Workflow 차단, 하청 안의 재하청 차단, 호출 때 `model` 지정 차단, 옛 도구 이름 `Task`입니다. 이것들은 자동 시험으로만 확인했습니다.
+실제 세션에서 확인하지 못한 것은 Workflow 차단, 하청 안의 재하청 차단, 옛 도구 이름 `Task`입니다. 이것들은 자동 시험으로만 확인했습니다.
+재하청은 시험하려 했지만, 하청(executor)이 "하청 안에서 다시 하청을 띄우지 않는다"는 자기 규칙을 지켜 호출 자체를 하지 않았습니다. 그래서 게이트까지 가지 않았습니다.
 비대화형 `claude -p` 시험은 CLI 로그인이 만료된 상태라 하지 못했습니다(`Failed to authenticate: OAuth session expired …`).
+
+### 실제 설치본 기능 점검 (macOS, Claude Code 대상)
+
+실제 컴퓨터의 설치본에서 명령을 하나씩 돌려 결과 파일과 게이트 판정을 확인했습니다. 모두 통과했습니다.
+
+- `oche on`/`off`: 상태 파일과 `active.md`가 바뀌고, 꺼진 동안 게이트가 통과시키며 켜면 다시 막음
+- 역할 변경(`oche runner haiku medium`): 하청 정의 파일이 바뀌고, 게이트가 새 값만 통과시킴
+- 프리셋: `saver`·`max`·`default` 적용, 사용자 프리셋 저장·적용·삭제, 내장 이름으로 저장 거부
+- 고정(`pin`/`unpin`), 옛 버전 ID 안내, `oche reset`
+- `oche update`(Claude Code 실행 파일에서 계열별 최신 모델 읽기), `oche selftest`
+- 키보드 화면: 의사 터미널에서 열기, 방향키·Enter·Esc·q, 정상 종료와 터미널 복구
+- GitHub에서 새로 받은 저장소로 테스트 전체 실행(Python 3.14, 3.9.6)
 
 ### 시험하지 않은 것
 
 - Linux(경로 규칙은 macOS와 같지만 실제 기기에서 돌려 보지 않았습니다)
 - ChatGPT 앱에서의 훅 신뢰·실행, Codex CLI의 대화형 `/hooks` 신뢰 흐름
 - 실제 Windows(`.cmd`/`.ps1`, `commandWindows`, 콘솔 키 입력, 앱 엔진 감지)
-- 다리 하청의 실제 실행, IDE 확장, 다중 에이전트 V2, Python 3.8 실행
+- 다리 하청의 Codex → Claude 방향과 세션 안 전체 경로, IDE 확장, 다중 에이전트 V2, Python 3.8 실행
 
 ## Windows
 

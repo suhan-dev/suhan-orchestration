@@ -36,22 +36,30 @@ tilde = L.tilde
 # ======================================================================
 
 def legacy_claude(info):
-    """옛 fable 설치본의 흔적."""
+    """옛 fable 설치본. (작동 중, 남은 흔적) 두 목록을 돌려준다.
+
+    작동 중: CLAUDE.md 의 fable/active.md 불러오기 줄, settings.json 의 orchestration-gate 훅.
+    남은 흔적: <claude>/fable/ 폴더, ~/.local/bin/fable. --migrate-legacy 뒤에도 일부러 남겨 두는 것들이라
+    이것만 있으면 충돌이 아니다."""
     d = info["dir"]
     p = L.cpaths(d)
-    found = []
-    if os.path.isdir(os.path.join(d, "fable")):
-        found.append(os.path.join(d, "fable") + os.sep)
+    active, residue = [], []
     if "fable/active.md" in (L.read_text(p["claude_md"]) or ""):
-        found.append(p["claude_md"] + " (fable/active.md 불러오기 줄)")
+        active.append(p["claude_md"] + " (fable/active.md 불러오기 줄)")
     s = L.read_json(p["settings"], {})
     pre = ((s or {}).get("hooks") or {}).get("PreToolUse") if isinstance(s, dict) else None
     if L.has_hook(pre, "orchestration-gate"):
-        found.append(p["settings"] + " (orchestration-gate 훅)")
+        active.append(p["settings"] + " (orchestration-gate 훅)")
+    if os.path.isdir(os.path.join(d, "fable")):
+        residue.append(os.path.join(d, "fable") + os.sep)
     fb = os.path.join(L.local_bin(), "fable")
     if os.path.lexists(fb):
-        found.append(fb)
-    return found
+        residue.append(fb)
+    return active, residue
+
+
+def legacy_residue_note(residue):
+    return "옛 fable 파일이 남아 있지만 더는 쓰이지 않습니다. 필요 없으면 지워도 됩니다: %s" % ", ".join(tilde(x) for x in residue)
 
 
 ENV_SH_NOTE = "셸 설정(~/.zshrc 등)에 `fable/env.sh`를 불러오는 줄이 있으면 더는 필요 없습니다. 지워도 됩니다."
@@ -128,15 +136,18 @@ def gather(args, live=True):
     if "claude" in ctx["targets"]:
         ci = info["claude"]
         p = L.cpaths(ci["dir"])
-        leg = legacy_claude(ci)
-        ctx["legacy"] = leg
-        if leg:
+        active, residue = legacy_claude(ci)
+        ctx["legacy"] = active + residue
+        ctx["legacy_active"], ctx["legacy_residue"] = active, residue
+        if active:
             if args.migrate_legacy:
                 ctx["notes"]["claude"].append("옛 fable 설치본을 옮깁니다(백업 후 옛 불러오기 줄·훅·하청 심링크를 빼고 .fable-state 를 off 로). "
                                               "%s/fable/ 과 ~/.local/bin/fable 은 건드리지 않습니다." % tilde(ci["dir"]))
             else:
                 ctx["conflicts"]["claude"].append("옛 fable 설치본이 있습니다: %s → --migrate-legacy 로 옮기세요."
-                                                  % ", ".join(tilde(x) for x in leg))
+                                                  % ", ".join(tilde(x) for x in active + residue))
+        elif residue:
+            ctx["notes"]["claude"].append(legacy_residue_note(residue))
         envs = legacy_env_sh()
         if envs:
             ctx["notes"]["claude"].append(ENV_SH_NOTE + " (찾은 곳: %s)" % ", ".join(tilde(x) for x in envs))
@@ -145,7 +156,10 @@ def gather(args, live=True):
             ctx["conflicts"]["claude"].append("%s 이 올바른 JSON이 아닙니다. 고친 뒤 다시 실행하세요." % tilde(p["settings"]))
         for r in L.ROLES:
             dst = os.path.join(p["agents"], r + ".md")
-            if legacy_agent_link(dst) and (args.migrate_legacy or leg):
+            if legacy_agent_link(dst) and (args.migrate_legacy or active):
+                continue
+            if legacy_agent_link(dst):
+                ctx["conflicts"]["claude"].append("%s 가 옛 fable 하청 심링크입니다 → --migrate-legacy 로 옮기세요." % tilde(dst))
                 continue
             if not L.claude_agent_owned(p, r):
                 if args.force_agents:
@@ -368,10 +382,13 @@ def install_claude(ctx, cfg, args, backup):
     msgs = []
     if args.migrate_legacy and ctx.get("legacy"):
         msgs.extend(migrate_legacy(p, backup))
+    if args.migrate_legacy and ctx.get("legacy_active"):
         msgs.append("%s/fable/ 과 ~/.local/bin/fable 은 그대로 두었습니다. 더는 쓰지 않으니 필요 없으면 직접 지우세요."
                     % tilde(ci["dir"]))
-        if legacy_env_sh():
-            msgs.append(ENV_SH_NOTE)
+    elif ctx.get("legacy_residue"):
+        msgs.append("안내: " + legacy_residue_note(ctx["legacy_residue"]))
+    if ctx.get("legacy") and legacy_env_sh():
+        msgs.append(ENV_SH_NOTE)
     t = cfg["targets"].setdefault("claude", {})
     t.update({"dir": ci["dir"], "exe": ci["exe"], "version": ci["version"]})
     for r in L.ROLES:

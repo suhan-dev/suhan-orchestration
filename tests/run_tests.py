@@ -328,6 +328,39 @@ def s03_legacy():
     check("3 옛 설치본: 백업 파일 생김", any(".bak_oche_" in n for n in os.listdir(e.p(".claude"))))
     c, out = e.install("verify")
     check("3 옛 설치본: verify 통과", c == 0 and nofail(out), out)
+    c, out = e.install("install", "--only", "claude")
+    check("3b 옮긴 뒤 재설치: 플래그 없이 성공", c == 0 and "설치 거부" not in out and "충돌" not in out, out)
+    check("3b 옮긴 뒤 재설치: 남은 흔적 안내", "안내: 옛 fable 파일이 남아 있지만 더는 쓰이지 않습니다. 필요 없으면 지워도 됩니다:" in out
+          and "~/.claude/fable/" in out and "~/.local/bin/fable" in out, out)
+    check("3b 옮긴 뒤 재설치: 옛 폴더·옛 명령은 그대로", os.path.isfile(e.p(".claude/fable/fable.md")) and os.path.isfile(e.p(".local/bin/fable")))
+    e.cleanup()
+
+
+def s03c_legacy_residue():
+    e = Env("legacy-residue")
+    e.write(e.p(".claude/fable/fable.md"), "old rules\n")
+    e.write(e.p(".local/bin/fable"), "#!/bin/sh\necho old\n", 0o755)
+    c, out = e.install("plan", "--only", "claude")
+    check("3c 흔적만: plan 에 충돌 없음·안내만", "충돌" not in out
+          and "안내: 옛 fable 파일이 남아 있지만 더는 쓰이지 않습니다. 필요 없으면 지워도 됩니다: ~/.claude/fable/, ~/.local/bin/fable" in out, out)
+    c, out = e.install("install", "--only", "claude")
+    check("3c 흔적만: install 성공 + 안내", c == 0 and "설치 거부" not in out and "옛 fable 파일이 남아 있지만" in out
+          and os.path.isfile(e.p(".claude/agents/executor.md")), out)
+    check("3c 흔적만: 옛 폴더·옛 명령은 그대로", os.path.isfile(e.p(".claude/fable/fable.md")) and os.path.isfile(e.p(".local/bin/fable")))
+    c, out = e.install("install", "--only", "claude", "--migrate-legacy")
+    check("3c 흔적만: --migrate-legacy 를 줘도 오류 없이 지나감", c == 0 and "설치 거부" not in out, out)
+    e.cleanup()
+    e = Env("legacy-hookonly")
+    fd = e.p(".claude/fable")
+    e.write(e.p(".claude/settings.json"), json.dumps({"hooks": {"PreToolUse": [
+        {"matcher": "Agent", "hooks": [{"type": "command", "command": fd + "/hooks/orchestration-gate.py"}]}]}}))
+    c, out = e.install("install", "--only", "claude")
+    check("3c 작동 중(훅만): 플래그 없이 거부", c == 3 and "[Claude Code] 설치 거부" in out and "--migrate-legacy" in out, out)
+    e.cleanup()
+    e = Env("legacy-loaderonly")
+    e.write(e.p(".claude/CLAUDE.md"), "@%s/.claude/fable/active.md\n" % e.home)
+    c, out = e.install("install", "--only", "claude")
+    check("3c 작동 중(불러오기 줄만): 플래그 없이 거부", c == 3 and "[Claude Code] 설치 거부" in out and "--migrate-legacy" in out, out)
     e.cleanup()
 
 
@@ -984,7 +1017,7 @@ def s24_presets():
 
 
 SCENARIOS = [
-    ("claude_only", s01_claude_only), ("codex_only", s02_codex_only), ("legacy", s03_legacy),
+    ("claude_only", s01_claude_only), ("codex_only", s02_codex_only), ("legacy", s03_legacy), ("legacy_residue", s03c_legacy_residue),
     ("idempotent", s04_idempotent), ("switch_gate", s05_switch_and_gate), ("sync", s06_sync),
     ("effort", s07_effort_downgrade), ("override", s08_override), ("preserve_uninstall", s09_preserve_and_s11_uninstall),
     ("hook_path", s10_hook_path), ("degraded", s12_degraded), ("windows", s13_windows), ("command_name", s14_command_name),
