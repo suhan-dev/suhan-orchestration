@@ -74,7 +74,7 @@ oche status         # + 부품 점검
 ```
 
 ```text
-oche 1.1.0 — 하청 오케스트레이션 (명령 이름: oche)
+oche 1.1.1 — 하청 오케스트레이션 (명령 이름: oche)
 프리셋: 기본
 
 [Claude Code] ON   (~/.claude, Claude Code 2.1.321)
