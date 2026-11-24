@@ -193,6 +193,7 @@ def s01_claude_only():
     check("1 Claude만: 셸 설정에 fable/env.sh 가 없으면 env.sh 안내 없음", "fable/env.sh" not in out, out)
     c, out = e.install("install")
     check("1 Claude만: install 성공", c == 0, out)
+    check("1 Claude만: 성공하면 끝에 스타 안내와 저장소 링크", "스타" in out and "https://github.com/suhan-dev/suhan-orchestration" in out, out)
     for r in ("executor", "deep-reasoner", "runner"):
         f = e.p(".claude/agents/%s.md" % r)
         check("1 Claude만: 하청 %s 은 실제 파일(심링크 아님)" % r, os.path.isfile(f) and not os.path.islink(f))
@@ -311,6 +312,7 @@ def s03_legacy():
     c, out = e.install("install")
     check("3 옛 설치본: 플래그 없이 install → Claude 거부(코드 3), Codex는 설치", c == 3 and "[Claude Code] 설치 거부" in out
           and os.path.isfile(e.p(".codex/agents/executor.toml")) and not os.path.exists(e.p(".claude/oche")), out)
+    check("3 옛 설치본: 일부 대상이 거부되면 스타 안내 없음", "스타" not in out, out)
     c, out = e.install("install", "--migrate-legacy")
     check("3 옛 설치본: --migrate-legacy 로 설치", c == 0, out)
     check("3 옛 env.sh: migrate 출력에 안내, 셸 설정은 그대로", "더는 필요 없습니다" in out

@@ -94,7 +94,7 @@ python3 install.py install --all --command-name orch
 터미널에서 `oche`를 인자 없이 실행하면 키보드로 조작하는 화면이 열립니다. 왼쪽은 메뉴, 오른쪽은 지금 구성도입니다.
 
 ```text
- oche · 하청 오케스트레이션 1.1.2  ·  프리셋: 기본
+ oche · 하청 오케스트레이션 1.1.3  ·  프리셋: 기본
 
    Claude Code                             ● ON          ╭──────────────────────────╮
  ❯   executor                       opus · high          │          사용자          │

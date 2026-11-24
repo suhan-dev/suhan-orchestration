@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 PROJECT = "suhan-orchestration"
 WRAPPER_MARK = "oche-wrapper"
 DEFAULT_NAME = "oche"

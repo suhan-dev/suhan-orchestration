@@ -564,6 +564,9 @@ def cmd_install(args):
               "Review hooks 또는 Settings > Hooks 에서 'oche 게이트 확인'·'oche 하청 모델 확인' 훅을 신뢰")
     print("  %s) 새 세션(Claude Code)·새 채팅(ChatGPT 앱)을 열어야 적용됩니다." % ("3" if "codex" in ok else "2"))
     print("  켜기: %s on   끄기: %s off   현황: %s" % (name, name, name))
+    if not refused:
+        print("")
+        print("도움이 됐다면 저장소에 스타 하나 눌러 주세요: https://github.com/suhan-dev/suhan-orchestration")
     return 3 if refused else 0
 
 
